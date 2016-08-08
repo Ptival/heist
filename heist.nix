@@ -33,6 +33,7 @@ mkDerivation {
     test-framework-quickcheck2 text time transformers transformers-base
     unordered-containers vector xmlhtml
   ];
+  doCheck = false;
   homepage = "http://snapframework.com/";
   description = "An Haskell template system supporting both HTML5 and XML";
   license = stdenv.lib.licenses.bsd3;
