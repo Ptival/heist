@@ -1,4 +1,6 @@
+{-# LANGUAGE CPP              #-}
 {-# LANGUAGE FlexibleContexts #-}
+
 module Heist.Tests
   ( tests
   ) where
@@ -51,11 +53,19 @@ loadErrorsTest = do
            ets
   where
     expected = sort
+#if MIN_VERSION_base(4,9,0)
+        ["templates-bad/apply-missing-attr.tpl: must supply \"template\" attribute in <apply>\nCallStack (from HasCallStack):\n  error, called at src/Heist/Common.hs:76:15 in main:Heist.Common"
+        ,"templates-bad/apply-template-not-found.tpl: apply tag cannot find template \"/page\"\nCallStack (from HasCallStack):\n  error, called at src/Heist/Common.hs:76:15 in main:Heist.Common"
+        ,"templates-bad/bind-infinite-loop.tpl: template recursion exceeded max depth, you probably have infinite splice recursion!\nCallStack (from HasCallStack):\n  error, called at src/Heist/Common.hs:76:15 in main:Heist.Common"
+        ,"templates-bad/bind-missing-attr.tpl: must supply \"tag\" attribute in <bind>\nCallStack (from HasCallStack):\n  error, called at src/Heist/Common.hs:76:15 in main:Heist.Common"
+        ]
+#else
         ["templates-bad/bind-infinite-loop.tpl: template recursion exceeded max depth, you probably have infinite splice recursion!"
         ,"templates-bad/apply-template-not-found.tpl: apply tag cannot find template \"/page\""
         ,"templates-bad/bind-missing-attr.tpl: must supply \"tag\" attribute in <bind>"
         ,"templates-bad/apply-missing-attr.tpl: must supply \"template\" attribute in <apply>"
         ]
+#endif
 
 
 attrSpliceTest :: IO ()
@@ -81,8 +91,8 @@ attrSpliceTest = do
   where
     expected1 = "<input type='checkbox' value='foo' checked />\n<input type='checkbox' value='bar' />\n"
     expected2 = "<input type='checkbox' value='foo' />\n<input type='checkbox' value='bar' checked />\n"
-    expected3 = "<input type=\"checkbox\" value=\"foo\" checked />&#10;<input type=\"checkbox\" value=\"bar\" />&#10;"
-    expected4 = "<input type=\"checkbox\" value=\"foo\" />&#10;<input type=\"checkbox\" value=\"bar\" checked />&#10;"
+    expected3 = "<input type=\"checkbox\" value=\"foo\" checked />\n<input type=\"checkbox\" value=\"bar\" />\n"
+    expected4 = "<input type=\"checkbox\" value=\"foo\" />\n<input type=\"checkbox\" value=\"bar\" checked />\n"
 
 fooSplice :: I.Splice (StateT Int IO)
 fooSplice = do
@@ -94,7 +104,7 @@ tdirCacheTest :: IO ()
 tdirCacheTest = do
     let rSplices = ("foosplice" ## fooSplice)
         dSplices = ("foosplice" ## stateSplice)
-        sc = SpliceConfig rSplices mempty dSplices mempty mempty
+        sc = SpliceConfig rSplices mempty dSplices mempty mempty (const True)
         hc = HeistConfig sc "" False
     td <- newTemplateDirectory' "templates" hc
 
@@ -155,7 +165,7 @@ headMergeTest = do
       ["<html><head>\n<link href='wrapper-link' />\n"
       ,"<link href='nav-link' />\n\n<link href='index-link' />"
       ,"</head>\n\n<body>\n\n<div>nav bar</div>\n\n\n"
-      ,"<div>index page</div>\n\n</body>\n</html>&#10;&#10;"
+      ,"<div>index page</div>\n\n</body>\n</html>\n\n"
       ]
 
 bindApplyInteractionTest :: IO ()
@@ -169,13 +179,13 @@ bindApplyInteractionTest = do
     H.assertEqual "interpreted failure" iExpected iOut
   where
     cExpected = B.intercalate "\n"
-      ["&#10;This is a test."
-      ,"===bind content===&#10;Another test line."
-      ,"apply content&#10;Last test line."
-      ,"&#10;"
+      ["\nThis is a test."
+      ,"===bind content===\nAnother test line."
+      ,"apply content\nLast test line."
+      ,"\n"
       ]
     iExpected = B.unlines
-      ["&#10;This is a test."
+      ["\nThis is a test."
       ,"===bind content==="
       ,"Another test line."
       ,"apply content"
@@ -190,11 +200,10 @@ backslashHandlingTest :: IO ()
 backslashHandlingTest = do
     hs <- loadHS "templates"
     cOut <- cRender hs "backslash"
-    H.assertEqual "compiled failure" cExpected cOut
+    H.assertEqual "compiled failure" expected cOut
 
     iOut <- iRender hs "backslash"
-    H.assertEqual "interpreted failure" iExpected iOut
+    H.assertEqual "interpreted failure" expected iOut
   where
-    cExpected = "<foo regex='abc\\d+\\\\e'></foo>&#10;"
-    iExpected = "<foo regex='abc\\d+\\\\e'></foo>\n"
+    expected = "<foo regex='abc\\d+\\\\e'></foo>\n"
 

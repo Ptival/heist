@@ -165,17 +165,26 @@ compileTemplate tpath df = do
 ------------------------------------------------------------------------------
 compileTemplates
     :: Monad n
-    => HeistState n
+    => (TPath -> Bool)
+    -> HeistState n
     -> IO (Either [String] (HeistState n))
-compileTemplates hs = do
-    (tmap, hs') <- runHeistT compileTemplates' (X.TextNode "") hs
+compileTemplates f hs = do
+    (tmap, hs') <- runHeistT (compileTemplates' f) (X.TextNode "") hs
     let pre = _splicePrefix hs'
+    let canError = _errorNotBound hs'
+    let errs = _spliceErrors hs'
     let nsErr = if not (T.null pre) && (_numNamespacedTags hs' == 0)
                   then Left [noNamespaceSplicesMsg $ T.unpack pre]
                   else Right ()
-    return $ case _spliceErrors hs' of
-               [] -> nsErr >> (Right $! hs { _compiledTemplateMap = tmap })
-               es -> Left $ either (++) (const id) nsErr $ map T.unpack es
+    return $ if canError
+               then case errs of
+                     [] -> nsErr >>
+                           (Right $! hs { _compiledTemplateMap = tmap })
+                     es -> Left $ either (++) (const id) nsErr $
+                           map (T.unpack . spliceErrorText) es
+               else nsErr >> (Right $! hs { _compiledTemplateMap = tmap
+                                          , _spliceErrors = errs
+                                          })
 
 
 ------------------------------------------------------------------------------
@@ -193,11 +202,12 @@ noNamespaceSplicesMsg pre = unwords
 ------------------------------------------------------------------------------
 compileTemplates'
     :: Monad n
-    => HeistT n IO (H.HashMap TPath ([Chunk n], MIMEType))
-compileTemplates' = do
+    => (TPath -> Bool)
+    -> HeistT n IO (H.HashMap TPath ([Chunk n], MIMEType))
+compileTemplates' f = do
     hs <- getHS
     let tpathDocfiles :: [(TPath, DocumentFile)]
-        tpathDocfiles = map (\(a,b) -> (a, b))
+        tpathDocfiles = filter (f . fst)
                             (H.toList $ _templateMap hs)
     foldM runOne H.empty tpathDocfiles
   where
@@ -263,11 +273,9 @@ lookupSplice :: Text -> HeistT n IO (Maybe (Splice n))
 lookupSplice nm = do
     pre <- getsHS _splicePrefix
     res <- getsHS (H.lookup nm . _compiledSpliceMap)
-    canError <- getsHS _errorNotBound
     if isNothing res && T.isPrefixOf pre nm && not (T.null pre)
       then do
-          when canError $
-            tellSpliceError $ "No splice bound for " `mappend` nm
+          tellSpliceError $ "No splice bound for " `mappend` nm
           return Nothing
       else return res
 
@@ -278,14 +286,18 @@ lookupSplice nm = do
 -- compileNode to generate the appropriate runtime computation.
 runNode :: Monad n => X.Node -> Splice n
 runNode node = localParamNode (const node) $ do
-    pre <- getsHS _splicePrefix
+    hs <- getHS
+    let pre = _splicePrefix hs
     let hasPrefix = (T.isPrefixOf pre `fmap` X.tagName node) == Just True
     when (not (T.null pre) && hasPrefix) incNamespacedTags
     isStatic <- subtreeIsStatic node
     markup <- getsHS _curMarkup
     if isStatic
       then return $! yieldPure $! renderFragment markup [parseAttrs node]
-      else compileNode node
+      else localHS (\hs' -> hs' {_splicePath =
+                                 (_curContext hs', _curTemplateFile hs',
+                                  X.elementTag node):(_splicePath hs')}) $
+           compileNode node
 
 
 parseAttrs :: X.Node -> X.Node

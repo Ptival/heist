@@ -141,7 +141,7 @@ loadTest = do
     ets <- loadIO "templates" mempty mempty mempty mempty
     either (error "Error loading templates")
            (\ts -> do let tm = _templateMap ts
-                      H.assertEqual "loadTest size" 40 $ Map.size tm
+                      H.assertEqual "loadTest size" 41 $ Map.size tm
            ) ets
 
 
@@ -185,7 +185,7 @@ doctypeTest = do
   where
     indexRes = B.concat
         [doctype
-        ,"\n&#10;<html>\n<div id='pre_{att}_post'>\n/index\n</div>\n</html>\n"
+        ,"\n\n<html>\n<div id='pre_{att}_post'>\n/index\n</div>\n</html>\n"
         ]
 
 ------------------------------------------------------------------------------
